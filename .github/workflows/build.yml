@@ -1,15 +1,34 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=0.75, maximum-scale=1.0, user-scalable=yes" />
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Pastebin.com - Not Found (#404)</title>
-</head>
-<body>
-
-
-<h1>Not Found (#404)</h1>
-<p>This page is no longer available. It has either expired, been removed by its creator, or removed by one of the Pastebin staff.</p>
-
-</body>
-</html>
+name: build-boot-vince-working
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git clone --depth 1 https://github.com/vatva691/android_kernel_xiaomi_msm8953-4.9 -b lineage-20.0 kernel || git clone --depth 1 https://github.com/vatva691/android_kernel_xiaomi_msm8953-4.9 kernel
+          cat kernel/arch/arm64/configs/vince-perf_defconfig > kernel/arch/arm64/configs/droidian_defconfig
+          echo "CONFIG_DEVTMPFS=y
+          CONFIG_DEVTMPFS_MOUNT=y
+          CONFIG_VT=y
+          CONFIG_NAMESPACES=y
+          CONFIG_CGROUPS=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_FHANDLE=y
+          CONFIG_SECCOMP=y
+          CONFIG_VETH=y" >> kernel/arch/arm64/configs/droidian_defconfig
+      - run: |
+          sudo apt update && sudo apt install -y gcc-10-aarch64-linux-gnu bc bison flex libssl-dev
+          cd kernel
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-gcc-10- droidian_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-gcc-10- -j2 Image.gz dtbs
+          cat arch/arm64/boot/Image.gz arch/arm64/boot/dts/qcom/msm8953-vince*.dtb > ../Image.gz-dtb
+          cd ..
+          echo -n | gzip > ramdisk.cpio.gz
+          wget -q https://github.com/osm0x/android-prebuilt-mkbootimg/releases/download/20200505/mkbootimg -O mkbootimg && chmod +x mkbootimg
+          ./mkbootimg --kernel Image.gz-dtb --ramdisk ramdisk.cpio.gz --base 0x80000000 --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 --pagesize 2048 --cmdline "androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 androidboot.bootdevice=7824900.sdhci droidian.lvm.prefer" -o boot-vince-A13-droidian.img
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boot-working-vince
+          path: boot-vince-A13-droidian.img
