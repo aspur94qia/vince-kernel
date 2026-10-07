@@ -1,0 +1,9 @@
+Source: linux-vince
+Section: kernel
+Priority: optional
+Maintainer: aspur94qia <aspur94qia@gmail.com>
+Build-Depends: debhelper-compat (= 13), bc, bison, flex, libssl-dev, kmod, libelf-dev, crossbuild-essential-arm64
+
+Package: linux-image-vince
+Architecture: arm64
+Description: Real Droidian Kernel Package for Xiaomi Vince

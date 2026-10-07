@@ -1,0 +1,29 @@
+#!/usr/bin/make -f
+
+export ARCH=arm64
+export CROSS_COMPILE=aarch64-linux-gnu-
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	@echo "Mencari berkas defconfig kernel vince..."
+	@if [ -f arch/arm64/configs/vince_defconfig ]; then \
+		make vince_defconfig; \
+	elif [ -f arch/arm64/configs/msm8953_defconfig ]; then \
+		make msm8953_defconfig; \
+	elif [ -f arch/arm64/configs/msm8953-perf_defconfig ]; then \
+		make msm8953-perf_defconfig; \
+	else \
+		ANY_CONF=$$(ls arch/arm64/configs/ | head -n 1); \
+		make $$ANY_CONF; \
+	fi
+
+override_dh_auto_build:
+	@echo "Memulai kompilasi kode mesin kernel Android..."
+	make -j$$(nproc) Image.gz-dtb || make -j$$(nproc) Image.gz || make -j$$(nproc)
+
+override_dh_auto_install:
+	mkdir -p debian/linux-image-vince/boot
+	CP_IMG=$$(find arch/arm64/boot/ -name "Image.gz*" 2>/dev/null | head -n 1); \
+	if [ -n "$$CP_IMG" ]; then cp $$CP_IMG debian/linux-image-vince/boot/vmlinuz; fi
