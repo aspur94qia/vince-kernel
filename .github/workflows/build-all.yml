@@ -53,13 +53,7 @@ jobs:
       - name: Ambil boot.img asli (opsional)
         continue-on-error: true
         run: |
-          # METODE ABCDEF: Memecah link github boot_repo
-          a="https://"
-          b="git"
-          c="://hub.com"
-          d="${{ inputs.boot_repo }}"
-          URL_BOOT="${a}${b}${c}${d}"
-          
+          URL_BOOT="https://github.com/${{ inputs.boot_repo }}"
           git clone --depth 1 "$URL_BOOT" bootsrc || true
           [ -f bootsrc/boot.img ] && cp bootsrc/boot.img boot-asli.img || echo "boot.img asli tidak ada, pakai nilai default"
 
@@ -227,6 +221,19 @@ jobs:
           
           # Menjalankan container builder OS debian sid untuk mengeksekusi script inner.sh
           docker run --rm -v ${{ github.workspace }}:/buildd/sources -w /buildd/sources debian:sid-slim /bin/bash ci/inner.sh
+
+      - name: Buat berkas boot.img dan Zip Flash
+        run: |
+          mkdir -p hasil
+          sudo chown -R "$USER" packages || true
+          cp packages/*.deb hasil/ 2>/dev/null || true
+          TARGET_IMG=$(find . -name "Image.gz*" 2>/dev/null | head -n 1)
+          if [ -n "$TARGET_IMG" ]; then
+            cp "$TARGET_IMG" hasil/boot.img
+            zip -j hasil/flash-droidian-vince.zip hasil/boot.img
+          else
+            echo "Kompilasi kode mesin gagal atau tidak menghasilkan berkas output" > hasil/LOG-GAGAL.txt
+          fi
 
       - name: Simpan Hasil Build
         uses: actions/upload-artifact@v4
