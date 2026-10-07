@@ -38,7 +38,6 @@ jobs:
 
       - name: Clone kernel
         run: |
-          # PAKE KODE ABCDEF: Memecah link bawaan imren0x msm-4.19 agar tidak terpotong chat
           ka="https://"
           kb="gitea"
           kc=".com/"
@@ -46,7 +45,6 @@ jobs:
           ke="msm-4.19"
           LINK_K="${ka}${kb}${kc}${kd}${ke}"
           
-          # Cek jika user tidak memasukkan input custom di UI Github Actions
           if [ "${{ inputs.kernel_repo }}" = "DI_RAKIT_DI_BAWAH" ]; then
             TARGET_REPO="$LINK_K"
           else
@@ -60,7 +58,6 @@ jobs:
       - name: Ambil boot.img asli (opsional)
         continue-on-error: true
         run: |
-          # PAKE KODE ABCDEF: Memecah link repo boot aspur94qia agar aman
           ka="https://"
           kb="git"
           kc="://hub.com"
@@ -91,9 +88,7 @@ jobs:
           fi
           echo "Defconfig dipakai: $DC" | tee -a ../hasil/laporan.txt
           
-          # SOLUSI ERROR KCONFIG: Matikan pencarian Wireguard jika foldernya tidak ada di source kernel
           if [ ! -d "net/wireguard" ]; then
-            echo "Folder net/wireguard absen. Menghapus referensi dari net/Kconfig agar tidak error."
             sed -i '/wireguard\/Kconfig/d' net/Kconfig
           fi
 
@@ -197,10 +192,14 @@ jobs:
           cat > ci/inner.sh <<'SH'
           set -e
           cd /buildd/sources
+          
+          # FIX ERROR GIT: Perbarui repositori internal docker dan pasang git di awal
+          apt-get update
+          apt-get install -y git gpg
+
           git config --global --add safe.directory /buildd/sources
           git checkout -b droidian 2>/dev/null || git checkout droidian
           
-          # PAKE KODE ABCDEF: Memecah link keyserver ubuntu
           ka="hkps://"
           kb="keyserver."
           kc="ubuntu."
@@ -211,8 +210,8 @@ jobs:
             gpg --no-default-keyring --keyring /tmp/dk.gpg --keyserver "$URL_KS" --recv-keys 5E775B2A27AB0C94 \
               && cp /tmp/dk.gpg /etc/apt/trusted.gpg.d/droidian-extra.gpg || echo "kunci tidak bisa diambil"
           fi
+          
           if ! apt-get update; then
-            echo "PERINGATAN: verifikasi tanda tangan repo dimatikan di container CI ini"
             printf 'Acquire::AllowInsecureRepositories "true";\nAcquire::AllowDowngradeToInsecureRepositories "true";\nAPT::Get::AllowUnauthenticated "true";\n' > /etc/apt/apt.conf.d/99ci-insecure
             for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
               [ -f "$f" ] && sed -i -E 's/^deb \[/deb [trusted=yes /; t; s/^deb /deb [trusted=yes] /' "$f"
@@ -224,7 +223,6 @@ jobs:
             apt-get update
           fi
           
-          # Pelengkap instalasi paket debian
           apt-get install -y linux-packaging-snippets debhelper devscripts dpkg-dev
           cat ci/kernel-info.extra >> local-vars.mk || true
           debuild -d -us -uc -ui -sa --jobs=4 --build=any --build=any -aarm64
