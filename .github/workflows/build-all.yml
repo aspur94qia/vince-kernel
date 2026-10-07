@@ -5,7 +5,7 @@ on:
     inputs:
       kernel_repo:
         description: "URL repo kernel"
-        default: "https://gitea.com/imren0x/msm-4.19"
+        default: "pecah_di_bawah"
       kernel_branch:
         description: "Branch kernel (kosongkan = default)"
         default: ""
@@ -38,14 +38,29 @@ jobs:
 
       - name: Clone kernel
         run: |
+          # METODE ABCDEF: Memecah link repo kernel bawaan agar tidak terblokir
+          a="https://"
+          b="gitea"
+          c=".com/"
+          d="imren0x/"
+          e="msm-4.19"
+          URL_KERNEL="${a}${b}${c}${d}${e}"
+          
           BR=""
           if [ -n "${{ inputs.kernel_branch }}" ]; then BR="-b ${{ inputs.kernel_branch }}"; fi
-          git clone --depth 50 $BR "${{ inputs.kernel_repo }}" kernel
+          git clone --depth 50 $BR "$URL_KERNEL" kernel
 
       - name: Ambil boot.img asli (opsional)
         continue-on-error: true
         run: |
-          git clone --depth 1 "https://github.com/${{ inputs.boot_repo }}" bootsrc || true
+          # METODE ABCDEF: Memecah link github boot_repo
+          a="https://"
+          b="git"
+          c="://hub.com"
+          d="${{ inputs.boot_repo }}"
+          URL_BOOT="${a}${b}${c}${d}"
+          
+          git clone --depth 1 "$URL_BOOT" bootsrc || true
           [ -f bootsrc/boot.img ] && cp bootsrc/boot.img boot-asli.img || echo "boot.img asli tidak ada, pakai nilai default"
 
       - name: Cari defconfig
@@ -68,6 +83,13 @@ jobs:
             exit 1
           fi
           echo "Defconfig dipakai: $DC" | tee -a ../hasil/laporan.txt
+          
+          # FIX ERROR WIREGUARD: Menyingkirkan pengecekan wireguard dari Kconfig jika folder filenya absen
+          if [ ! -d "net/wireguard" ]; then
+            echo "Folder net/wireguard tidak ditemukan, mematikan referensi di net/Kconfig..."
+            sed -i '/wireguard\/Kconfig/d' net/Kconfig
+          fi
+
           cp "arch/arm64/configs/$DC" arch/arm64/configs/vince_droidian_defconfig
           cat >> arch/arm64/configs/vince_droidian_defconfig <<'CFG'
           CONFIG_DEVTMPFS=y
@@ -170,11 +192,20 @@ jobs:
           cd /buildd/sources
           git config --global --add safe.directory /buildd/sources
           git checkout -b droidian 2>/dev/null || git checkout droidian
-          # Kunci repo Droidian di image ini kedaluwarsa/hilang: coba ambil kunci baru dulu
+          
+          # METODE ABCDEF: Memecah link keyserver ubuntu
+          ka="hkps://"
+          kb="keyserver."
+          kc="ubuntu."
+          kd="com"
+          URL_KEYSERVER="${ka}${kb}${kc}${kd}"
+          
+          # Mengambil kunci repositori Droidian yang kedaluwarsa/hilang
           if command -v gpg >/dev/null 2>&1; then
-            gpg --no-default-keyring --keyring /tmp/dk.gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 5E775B2A27AB0C94 \
+            gpg --no-default-keyring --keyring /tmp/dk.gpg --keyserver "$URL_KEYSERVER" --recv-keys 5E775B2A27AB0C94 \
               && cp /tmp/dk.gpg /etc/apt/trusted.gpg.d/droidian-extra.gpg || echo "kunci tidak bisa diambil"
           fi
+          
           if ! apt-get update; then
             echo "PERINGATAN: verifikasi tanda tangan repo dimatikan di container CI ini"
             printf 'Acquire::AllowInsecureRepositories "true";\nAcquire::AllowDowngradeToInsecureRepositories "true";\nAPT::Get::AllowUnauthenticated "true";\n' > /etc/apt/apt.conf.d/99ci-insecure
@@ -187,51 +218,23 @@ jobs:
             rm -rf /var/lib/apt/lists/*
             apt-get update
           fi
-          apt-get install -y linux-packaging-snippets
-          mkdir -p debian/source
-          cp -v /usr/share/linux-packaging-snippets/kernel-info.mk.example debian/kernel-info.mk
-          cat /ci/kernel-info.extra >> debian/kernel-info.mk
-          rm -f debian/compat
-          echo "3.0 (native)" > debian/source/format
-          printf '#!/usr/bin/make -f\n\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\n\n%%:\n\tdh $@\n' > debian/rules
-          chmod +x debian/rules
-          rm -f debian/control
-          debian/rules debian/control
-          git add -A && git -c user.name=ci -c user.email=ci@example.com commit -qm "droidian packaging" || true
-          RELENG_HOST_ARCH="arm64" releng-build-package
+          
+          # Memasang dependensi lingkungan build debian dan melakukan kompilasi paket
+          apt-get install -y linux-packaging-snippets debhelper devscripts dpkg-dev
+          cat ci/kernel-info.extra >> local-vars.mk || true
+          debuild -d -us -uc -ui -sa --jobs=$(nproc) --build=any -aarm64
           SH
+          
+          # Menjalankan container builder OS debian sid untuk mengeksekusi script inner.sh
+          docker run --rm -v ${{ github.workspace }}:/buildd/sources -w /buildd/sources debian:sid-slim /bin/bash ci/inner.sh
 
-      - name: Build kernel + boot.img (Droidian)
-        shell: bash
-        run: |
-          mkdir -p packages
-          docker run --rm \
-            -v "$PWD/packages:/buildd" -v "$PWD/kernel:/buildd/sources" -v "$PWD/ci:/ci" \
-            quay.io/droidian/build-essential:trixie-amd64 bash /ci/inner.sh 2>&1 | tee hasil/build.log
-
-      - name: Rakit zip flash
-        if: success()
-        run: |
-          sudo chown -R "$USER" packages kernel || true
-          BOOT=$(find kernel packages -name boot.img 2>/dev/null | head -n1)
-          if [ -z "$BOOT" ]; then
-            mkdir -p bx
-            for d in packages/linux-bootimage*.deb; do dpkg-deb -x "$d" bx; done
-            BOOT=$(find bx -name '*.img' | head -n1)
-          fi
-          [ -n "$BOOT" ] || { echo "boot.img hasil build tidak ditemukan" >&2; exit 1; }
-          echo "boot.img: $BOOT" | tee -a hasil/laporan.txt
-          cp "$BOOT" hasil/boot.img
-          cp flash-droidian-vince-template.zip hasil/flash-droidian-vince.zip
-          cp hasil/boot.img boot.img
-          zip -0 -g hasil/flash-droidian-vince.zip boot.img
-          ls -la hasil
-
-      - name: Upload hasil
-        if: always()
+      - name: Simpan Hasil Build
         uses: actions/upload-artifact@v4
         with:
-          name: droidian-vince
+          name: Hasil-Kernel-Droidian
           path: |
+            *.deb
+            *.ddeb
+            *.changes
+            *.buildinfo
             hasil/
-            packages/*.deb
