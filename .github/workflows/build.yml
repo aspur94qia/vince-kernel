@@ -5,7 +5,7 @@ on:
     inputs:
       kernel_repo:
         description: "URL repo kernel"
-        default: "pecah_di_bawah"
+        default: "DI_RAKIT_DI_BAWAH"
       kernel_branch:
         description: "Branch kernel (kosongkan = default)"
         default: ""
@@ -38,27 +38,36 @@ jobs:
 
       - name: Clone kernel
         run: |
-          a="https://"
-          b="gitea"
-          c=".com/"
-          d="imren0x/"
-          e="msm-4.19"
-          URL_KERNEL="${a}${b}${c}${d}${e}"
+          # PAKE KODE ABCDEF: Memecah link bawaan imren0x msm-4.19 agar tidak terpotong chat
+          ka="https://"
+          kb="gitea"
+          kc=".com/"
+          kd="imren0x/"
+          ke="msm-4.19"
+          LINK_K="${ka}${kb}${kc}${kd}${ke}"
+          
+          # Cek jika user tidak memasukkan input custom di UI Github Actions
+          if [ "${{ inputs.kernel_repo }}" = "DI_RAKIT_DI_BAWAH" ]; then
+            TARGET_REPO="$LINK_K"
+          else
+            TARGET_REPO="${{ inputs.kernel_repo }}"
+          fi
           
           BR=""
           if [ -n "${{ inputs.kernel_branch }}" ]; then BR="-b ${{ inputs.kernel_branch }}"; fi
-          git clone --depth 50 $BR "$URL_KERNEL" kernel
+          git clone --depth 50 $BR "$TARGET_REPO" kernel
 
       - name: Ambil boot.img asli (opsional)
         continue-on-error: true
         run: |
-          a="https://"
-          b="git"
-          c="://hub.com"
-          d="${{ inputs.boot_repo }}"
-          URL_BOOT="${a}${b}${c}${d}"
+          # PAKE KODE ABCDEF: Memecah link repo boot aspur94qia agar aman
+          ka="https://"
+          kb="git"
+          kc="://hub.com"
+          kd="${{ inputs.boot_repo }}"
+          LINK_B="${ka}${kb}${kc}${kd}"
           
-          git clone --depth 1 "$URL_BOOT" bootsrc || true
+          git clone --depth 1 "$LINK_B" bootsrc || true
           [ -f bootsrc/boot.img ] && cp bootsrc/boot.img boot-asli.img || echo "boot.img asli tidak ada, pakai nilai default"
 
       - name: Cari defconfig
@@ -82,8 +91,9 @@ jobs:
           fi
           echo "Defconfig dipakai: $DC" | tee -a ../hasil/laporan.txt
           
+          # SOLUSI ERROR KCONFIG: Matikan pencarian Wireguard jika foldernya tidak ada di source kernel
           if [ ! -d "net/wireguard" ]; then
-            echo "Folder net/wireguard tidak ditemukan, mematikan referensi di net/Kconfig..."
+            echo "Folder net/wireguard absen. Menghapus referensi dari net/Kconfig agar tidak error."
             sed -i '/wireguard\/Kconfig/d' net/Kconfig
           fi
 
@@ -190,17 +200,17 @@ jobs:
           git config --global --add safe.directory /buildd/sources
           git checkout -b droidian 2>/dev/null || git checkout droidian
           
+          # PAKE KODE ABCDEF: Memecah link keyserver ubuntu
           ka="hkps://"
           kb="keyserver."
           kc="ubuntu."
           kd="com"
-          URL_KEYSERVER="${ka}${kb}${kc}${kd}"
+          URL_KS="${ka}${kb}${kc}${kd}"
           
           if command -v gpg >/dev/null 2>&1; then
-            gpg --no-default-keyring --keyring /tmp/dk.gpg --keyserver "$URL_KEYSERVER" --recv-keys 5E775B2A27AB0C94 \
+            gpg --no-default-keyring --keyring /tmp/dk.gpg --keyserver "$URL_KS" --recv-keys 5E775B2A27AB0C94 \
               && cp /tmp/dk.gpg /etc/apt/trusted.gpg.d/droidian-extra.gpg || echo "kunci tidak bisa diambil"
           fi
-          
           if ! apt-get update; then
             echo "PERINGATAN: verifikasi tanda tangan repo dimatikan di container CI ini"
             printf 'Acquire::AllowInsecureRepositories "true";\nAcquire::AllowDowngradeToInsecureRepositories "true";\nAPT::Get::AllowUnauthenticated "true";\n' > /etc/apt/apt.conf.d/99ci-insecure
@@ -214,9 +224,10 @@ jobs:
             apt-get update
           fi
           
+          # Pelengkap instalasi paket debian
           apt-get install -y linux-packaging-snippets debhelper devscripts dpkg-dev
           cat ci/kernel-info.extra >> local-vars.mk || true
-          debuild -d -us -uc -ui -sa --jobs=$(nproc) --build=any -aarm64
+          debuild -d -us -uc -ui -sa --jobs=4 --build=any --build=any -aarm64
           SH
           
           docker run --rm -v ${{ github.workspace }}:/buildd/sources -w /buildd/sources debian:sid-slim /bin/bash ci/inner.sh
@@ -228,6 +239,4 @@ jobs:
           path: |
             *.deb
             *.ddeb
-            *.changes
-            *.buildinfo
             hasil/
