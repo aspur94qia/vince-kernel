@@ -15,6 +15,9 @@ jobs:
           sed -i '/wireguard/d' net/Kconfig || true
           mkdir -p net/wireguard
           echo "# dummy" > net/wireguard/Kconfig
+          # FIX dtc yylloc error gcc10
+          sed -i 's/YYLTYPE yylloc/extern YYLTYPE yylloc/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i 's/YYLTYPE yylloc/extern YYLTYPE yylloc/' scripts/dtc/dtc-lexer.lex.c || true
           cat arch/arm64/configs/vince-perf_defconfig > arch/arm64/configs/droidian_defconfig
           cat >> arch/arm64/configs/droidian_defconfig <<'EOF'
           CONFIG_DEVTMPFS=y
@@ -34,15 +37,13 @@ jobs:
       - name: Build
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-10-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev
-          # FIX: bikin symlink biar namanya bener
+          sudo apt-get install -y gcc-10 g++-10 gcc-10-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10
           sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
           sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-ar-10 /usr/bin/aarch64-linux-gnu-gcc-ar
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-nm-10 /usr/bin/aarch64-linux-gnu-gcc-nm
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-ranlib-10 /usr/bin/aarch64-linux-gnu-gcc-ranlib
           cd kernel
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- droidian_defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j4 Image.gz dtbs
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- HOSTCC=gcc-10 HOSTCFLAGS="-fcommon -w" droidian_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- HOSTCC=gcc-10 HOSTCFLAGS="-fcommon -w" -j4 Image.gz dtbs
           cat arch/arm64/boot/Image.gz arch/arm64/boot/dts/qcom/msm8953-vince*.dtb > ../Image.gz-dtb
           ls -lh ../Image.gz-dtb
       - name: Make boot.img
