@@ -44,7 +44,7 @@ jobs:
           cp droidian/kernel-info.mk debian/kernel-info.mk
           V=$(awk '/^VERSION/{a=$3}/^PATCHLEVEL/{b=$3}/^SUBLEVEL/{c=$3}END{print a"."b"."c}' Makefile)
           if grep -qE '^KERNEL_BASE_VERSION' debian/kernel-info.mk; then sed -i -E "s|^KERNEL_BASE_VERSION.*|KERNEL_BASE_VERSION = $V|" debian/kernel-info.mk; else echo "KERNEL_BASE_VERSION = $V" >> debian/kernel-info.mk; fi
-          echo 13 > debian/compat
+          rm -f debian/compat
           echo "3.0 (native)" > debian/source/format
           echo "include /usr/share/linux-packaging-snippets/kernel-snippet.mk" > debian/rules
           printf '%%:\n\tdh $@\n' >> debian/rules
