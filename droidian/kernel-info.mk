@@ -59,7 +59,6 @@ KERNEL_IMAGE_WITH_DTB = 1
 
 # Whether to include a DTB Overlay. Use 0 (no) or 1.
 # GKI devices should set this to 0
-KERNEL_IMAGE_WITH_DTB_OVERLAY = 1
 
 # Path to the DTB overlay.
 # If you leave this undefined, an attempt to find it automatically
@@ -70,7 +69,6 @@ KERNEL_IMAGE_WITH_DTB_OVERLAY = 1
 # Use 0 (no, default) or 1.
 # dtbo.img will always be shipped in the linux-bootimage- package.
 # GKI devices should set this to 0
-KERNEL_IMAGE_WITH_DTB_OVERLAY_IN_KERNEL = 0
 
 # Path to a specifc configuration file for mkdtboimg.
 # The default is to leave it undefined.
@@ -249,3 +247,5 @@ KERNEL_ARCH = arm64
 
 # Kernel target to build
 KERNEL_BUILD_TARGET = Image.gz
+KERNEL_IMAGE_WITH_DTB_OVERLAY =
+KERNEL_IMAGE_WITH_DTB_OVERLAY_IN_KERNEL =

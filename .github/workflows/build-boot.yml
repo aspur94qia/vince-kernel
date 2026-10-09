@@ -106,6 +106,12 @@ jobs:
               echo '# CONFIG_COMPAT_VDSO is not set' >> "arch/arm64/configs/$DEF"
               fixed=1
             fi
+            if grep -q 'dtbo.img' /tmp/build.log && ! grep -q '^KERNEL_IMAGE_WITH_DTB_OVERLAY =$' debian/kernel-info.mk; then
+              echo "FIX: matikan dtbo overlay"
+              sed -i -E '/^KERNEL_IMAGE_WITH_DTB_OVERLAY/d' debian/kernel-info.mk
+              printf 'KERNEL_IMAGE_WITH_DTB_OVERLAY =\nKERNEL_IMAGE_WITH_DTB_OVERLAY_IN_KERNEL =\n' >> debian/kernel-info.mk
+              fixed=1
+            fi
             [ "$fixed" -eq 1 ] || break
           done
 
