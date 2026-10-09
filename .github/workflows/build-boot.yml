@@ -27,6 +27,7 @@ jobs:
           cat > "$RUNNER_TEMP/inner.sh" <<'EOF'
           set -eux
           export DEBIAN_FRONTEND=noninteractive
+          echo "Acquire::AllowInsecureRepositories true; Acquire::AllowDowngradeToInsecureRepositories true; APT::Get::AllowUnauthenticated true; Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99insecure
           git config --global --add safe.directory '*'
           apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update
           apt-get install -y --allow-unauthenticated wget ca-certificates
