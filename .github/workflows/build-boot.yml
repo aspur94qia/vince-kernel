@@ -42,6 +42,9 @@ jobs:
           echo "3.0 (native)" > debian/source/format
           echo "include /usr/share/linux-packaging-snippets/kernel-snippet.mk" > debian/rules
           chmod +x debian/rules
+          ./debian/rules debian/control
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "droidian packaging" || true
           RELENG_HOST_ARCH="arm64" releng-build-package
           mkdir -p /out
           cp -v /buildd/*.deb /out/ || true
