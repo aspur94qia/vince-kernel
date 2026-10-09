@@ -19,6 +19,7 @@ jobs:
           git checkout -B droidian
           mkdir -p droidian
           cp "$GITHUB_WORKSPACE/droidian/kernel-info.mk" droidian/
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           head -4 Makefile
           ls arch/arm64/configs | grep -i vince || echo "defconfig vince TIDAK ketemu"
       - name: Tulis skrip build
