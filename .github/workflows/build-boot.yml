@@ -34,6 +34,11 @@ jobs:
           wget -O /tmp/lps.deb "https://production.repo.droidian.org/pool/main/l/linux-packaging-snippets/linux-packaging-snippets_49%2Bgit20260824222026.46633f1.next.production_all.deb"
           dpkg -i /tmp/lps.deb || apt-get -f install -y --allow-unauthenticated
           dpkg -s linux-packaging-snippets >/dev/null
+          dpkg --add-architecture arm64
+          apt-get update || true
+          base=https://production.repo.droidian.org/pool/main/i/initramfs-tools-halium/
+          for a in amd64 arm64; do f=$(wget -qO- $base | grep -oE "linux-initramfs-halium-generic_[^\"<> ]*_${a}\.deb" | sort -V | tail -1); [ -n "$f" ] || exit 1; wget -O /tmp/ih_$a.deb "$base$f"; done
+          apt-get install -y --allow-unauthenticated /tmp/ih_amd64.deb /tmp/ih_arm64.deb
           cd /buildd/sources
           mkdir -p debian/source
           cp droidian/kernel-info.mk debian/kernel-info.mk
