@@ -1,67 +1,62 @@
 name: build-boot
-
 on:
   workflow_dispatch:
-
+env:
+  KERNEL_REPO: https://github.com/ubports-on-vince/android_kernel_xiaomi_vince
+  KERNEL_BRANCH: ""
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Bebaskan ruang disk
+      - name: Bebaskan disk
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
+      - name: Ambil source kernel
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-          df -h /
-
-      - name: Siapkan branch droidian
-        run: git checkout -B droidian
-
+          git clone --depth 50 ${KERNEL_BRANCH:+-b "$KERNEL_BRANCH"} "$KERNEL_REPO" "$RUNNER_TEMP/ksrc"
+          cd "$RUNNER_TEMP/ksrc"
+          git checkout -B droidian
+          mkdir -p droidian
+          cp "$GITHUB_WORKSPACE/droidian/kernel-info.mk" droidian/
+          head -4 Makefile
+          ls arch/arm64/configs | grep -i vince || echo "defconfig vince TIDAK ketemu"
       - name: Tulis skrip build
         run: |
           mkdir -p "$RUNNER_TEMP/pkg" "$GITHUB_WORKSPACE/../out"
           cat > "$RUNNER_TEMP/inner.sh" <<'EOF'
           set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          git config --global --add safe.directory '*'
           apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update
-          apt-get install -y --allow-unauthenticated wget ca-certificates; wget -O /tmp/lps.deb "https://production.repo.droidian.org/pool/main/l/linux-packaging-snippets/linux-packaging-snippets_49%2Bgit20260824222026.46633f1.next.production_all.deb"; dpkg -i /tmp/lps.deb || apt-get -f install -y --allow-unauthenticated; dpkg -s linux-packaging-snippets >/dev/null
+          apt-get install -y --allow-unauthenticated wget ca-certificates
+          wget -O /tmp/lps.deb "https://production.repo.droidian.org/pool/main/l/linux-packaging-snippets/linux-packaging-snippets_49%2Bgit20260824222026.46633f1.next.production_all.deb"
+          dpkg -i /tmp/lps.deb || apt-get -f install -y --allow-unauthenticated
+          dpkg -s linux-packaging-snippets >/dev/null
           cd /buildd/sources
-
-          if [ ! -f droidian/kernel-info.mk ]; then
-            echo "=== droidian/kernel-info.mk belum ada. Contoh bawaan: ==="
-            cat /usr/share/linux-packaging-snippets/kernel-info.mk.example
-            exit 1
-          fi
-
           mkdir -p debian/source
           cp droidian/kernel-info.mk debian/kernel-info.mk
+          V=$(awk '/^VERSION/{a=$3}/^PATCHLEVEL/{b=$3}/^SUBLEVEL/{c=$3}END{print a"."b"."c}' Makefile)
+          if grep -qE '^KERNEL_BASE_VERSION' debian/kernel-info.mk; then sed -i -E "s|^KERNEL_BASE_VERSION.*|KERNEL_BASE_VERSION = $V|" debian/kernel-info.mk; else echo "KERNEL_BASE_VERSION = $V" >> debian/kernel-info.mk; fi
           echo 13 > debian/compat
           echo "3.0 (native)" > debian/source/format
           echo "include /usr/share/linux-packaging-snippets/kernel-snippet.mk" > debian/rules
           chmod +x debian/rules
-
           RELENG_HOST_ARCH="arm64" releng-build-package
-
           mkdir -p /out
           cp -v /buildd/*.deb /out/ || true
-          for d in /buildd/linux-bootimage-*.deb; do
-            dpkg-deb -x "$d" /tmp/bootimg
-          done
+          for d in /buildd/linux-bootimage-*.deb; do dpkg-deb -x "$d" /tmp/bootimg; done
           find /tmp/bootimg -name 'boot.img' -exec cp -v {} /out/boot.img \;
           EOF
-
       - name: Build di container Droidian
         run: |
           docker run --rm \
             -v "$RUNNER_TEMP/pkg":/buildd \
-            -v "$GITHUB_WORKSPACE":/buildd/sources \
+            -v "$RUNNER_TEMP/ksrc":/buildd/sources \
             -v "$GITHUB_WORKSPACE/../out":/out \
             -v "$RUNNER_TEMP/inner.sh":/inner.sh \
             quay.io/droidian/build-essential:trixie-amd64 \
             bash /inner.sh
-
       - uses: actions/upload-artifact@v4
         with:
           name: boot-img
