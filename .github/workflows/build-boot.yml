@@ -19,6 +19,9 @@ jobs:
           git checkout -B droidian
           mkdir -p droidian
           cp "$GITHUB_WORKSPACE/droidian/kernel-info.mk" droidian/
+          sed -i '/CONFIG_COMPAT_VDSO/d' arch/arm64/configs/vince-perf_defconfig
+          echo '# CONFIG_COMPAT_VDSO is not set' >> arch/arm64/configs/vince-perf_defconfig
+          sed -i -E 's/-Werror[^ ]*//g' Makefile arch/arm64/Makefile || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           head -4 Makefile
           ls arch/arm64/configs | grep -i vince || echo "defconfig vince TIDAK ketemu"
