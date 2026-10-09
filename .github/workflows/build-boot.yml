@@ -47,6 +47,7 @@ jobs:
           echo 13 > debian/compat
           echo "3.0 (native)" > debian/source/format
           echo "include /usr/share/linux-packaging-snippets/kernel-snippet.mk" > debian/rules
+          printf '%%:\n\tdh $@\n' >> debian/rules
           sed -i "1i #!/usr/bin/make -f" debian/rules
           chmod +x debian/rules
           make -f debian/rules debian/control
