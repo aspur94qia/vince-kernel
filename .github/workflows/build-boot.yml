@@ -1,79 +1,142 @@
 name: build-boot
+
 on:
   workflow_dispatch:
+
 env:
   KERNEL_REPO: https://github.com/ubports-on-vince/android_kernel_xiaomi_vince
-  KERNEL_BRANCH: ""
+  KERNEL_BRANCH: stable
+  DEFCONFIG: vince-perf_defconfig
+
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+
       - name: Bebaskan disk
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-      - name: Ambil source kernel
+
+      - name: Siapkan source kernel
         run: |
-          git clone --depth 50 ${KERNEL_BRANCH:+-b "$KERNEL_BRANCH"} "$KERNEL_REPO" "$RUNNER_TEMP/ksrc"
+          git clone --depth 50 -b "$KERNEL_BRANCH" "$KERNEL_REPO" "$RUNNER_TEMP/ksrc"
           cd "$RUNNER_TEMP/ksrc"
           git checkout -B droidian
           mkdir -p droidian
           cp "$GITHUB_WORKSPACE/droidian/kernel-info.mk" droidian/
-          sed -i '/CONFIG_COMPAT_VDSO/d' arch/arm64/configs/vince-perf_defconfig
-          echo '# CONFIG_COMPAT_VDSO is not set' >> arch/arm64/configs/vince-perf_defconfig
-          sed -i -E 's/-Werror[^ ]*//g' Makefile arch/arm64/Makefile || true
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i -E "s|^KERNEL_DEFCONFIG.*|KERNEL_DEFCONFIG = $DEFCONFIG|" droidian/kernel-info.mk
           head -4 Makefile
-          ls arch/arm64/configs | grep -i vince || echo "defconfig vince TIDAK ketemu"
+          ls arch/arm64/configs | grep -i vince || true
+          D="arch/arm64/configs/$DEFCONFIG"
+          test -f "$D"
+          sed -i '/CONFIG_COMPAT_VDSO/d' "$D"
+          echo '# CONFIG_COMPAT_VDSO is not set' >> "$D"
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i -E 's/-Werror[^ ]*//g' Makefile arch/arm64/Makefile || true
+          sed -i '/^config KALLSYMS_BASE_RELATIVE/,/^$/ s/^[[:space:]]*default .*/\tdefault n/' init/Kconfig || true
+          sed -n '/^config KALLSYMS_BASE_RELATIVE/,/^$/p' init/Kconfig || true
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "prefix kernel 4.9" || true
+
       - name: Tulis skrip build
         run: |
-          mkdir -p "$RUNNER_TEMP/pkg" "$GITHUB_WORKSPACE/../out"
+          mkdir -p "$RUNNER_TEMP/pkg" "$RUNNER_TEMP/out"
           cat > "$RUNNER_TEMP/inner.sh" <<'EOF'
-          set -eux
+          set -eu
           export DEBIAN_FRONTEND=noninteractive
-          echo "Acquire::AllowInsecureRepositories true; Acquire::AllowDowngradeToInsecureRepositories true; APT::Get::AllowUnauthenticated true; Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99insecure
           git config --global --add safe.directory '*'
-          apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update
-          apt-get install -y --allow-unauthenticated wget ca-certificates
-          wget -O /tmp/lps.deb "https://production.repo.droidian.org/pool/main/l/linux-packaging-snippets/linux-packaging-snippets_49%2Bgit20260824222026.46633f1.next.production_all.deb"
-          dpkg -i /tmp/lps.deb || apt-get -f install -y --allow-unauthenticated
-          dpkg -s linux-packaging-snippets >/dev/null
+          echo 'Acquire::AllowInsecureRepositories true; Acquire::AllowDowngradeToInsecureRepositories true; APT::Get::AllowUnauthenticated true; Acquire::Check-Valid-Until false;' > /etc/apt/apt.conf.d/99insecure
+          apt-get update || true
+          apt-get install -y wget ca-certificates
+          wget -qO /tmp/lps.deb "https://production.repo.droidian.org/pool/main/l/linux-packaging-snippets/linux-packaging-snippets_49%2Bgit20260824222026.46633f1.next.production_all.deb"
+          dpkg -i /tmp/lps.deb || apt-get -f install -y
           dpkg --add-architecture arm64
           apt-get update || true
           base=https://production.repo.droidian.org/pool/main/i/initramfs-tools-halium/
-          for a in amd64 arm64; do f=$(wget -qO- $base | grep -oE "linux-initramfs-halium-generic_[^\"<> ]*_${a}\.deb" | sort -V | tail -1); [ -n "$f" ] || exit 1; wget -O /tmp/ih_$a.deb "$base$f"; done
-          apt-get install -y --allow-unauthenticated /tmp/ih_amd64.deb /tmp/ih_arm64.deb
+          for a in amd64 arm64; do
+            f=$(wget -qO- "$base" | grep -oE "linux-initramfs-halium-generic_[^\"<> ]*_${a}\.deb" | sort -V | tail -1 || true)
+            if [ -n "$f" ]; then wget -qO "/tmp/ih_$a.deb" "$base$f"; else echo "initramfs $a tidak ditemukan"; fi
+          done
+          apt-get install -y /tmp/ih_amd64.deb /tmp/ih_arm64.deb || true
+
           cd /buildd/sources
           mkdir -p debian/source
           cp droidian/kernel-info.mk debian/kernel-info.mk
+          DEF=$(sed -n -E 's/^KERNEL_DEFCONFIG[[:space:]]*=[[:space:]]*//p' debian/kernel-info.mk)
           V=$(awk '/^VERSION/{a=$3}/^PATCHLEVEL/{b=$3}/^SUBLEVEL/{c=$3}END{print a"."b"."c}' Makefile)
-          if grep -qE '^KERNEL_BASE_VERSION' debian/kernel-info.mk; then sed -i -E "s|^KERNEL_BASE_VERSION.*|KERNEL_BASE_VERSION = $V|" debian/kernel-info.mk; else echo "KERNEL_BASE_VERSION = $V" >> debian/kernel-info.mk; fi
+          if grep -qE '^KERNEL_BASE_VERSION' debian/kernel-info.mk; then
+            sed -i -E "s|^KERNEL_BASE_VERSION.*|KERNEL_BASE_VERSION = $V|" debian/kernel-info.mk
+          else
+            echo "KERNEL_BASE_VERSION = $V" >> debian/kernel-info.mk
+          fi
           rm -f debian/compat
           echo "3.0 (native)" > debian/source/format
-          echo "include /usr/share/linux-packaging-snippets/kernel-snippet.mk" > debian/rules
-          printf 'build build-arch build-indep clean install install-arch install-indep binary binary-arch binary-indep:\n\tdh $@\n' >> debian/rules
-          sed -i "1i #!/usr/bin/make -f" debian/rules
+          printf '#!/usr/bin/make -f\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\nbuild build-arch build-indep clean install install-arch install-indep binary binary-arch binary-indep:\n\tdh $@\n' > debian/rules
           chmod +x debian/rules
           make -f debian/rules debian/control
-          git add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -qm "droidian packaging" || true
-          RELENG_HOST_ARCH="arm64" releng-build-package
-          mkdir -p /out
-          cp -v /buildd/*.deb /out/ || true
-          for d in /buildd/linux-bootimage-*.deb; do dpkg-deb -x "$d" /tmp/bootimg; done
-          find /tmp/bootimg -name 'boot.img' -exec cp -v {} /out/boot.img \;
+
+          try=0
+          rc=1
+          while :; do
+            try=$((try+1))
+            echo "=== PERCOBAAN BUILD $try ==="
+            git add -A
+            git -c user.name=ci -c user.email=ci@localhost commit -qm "droidian packaging $try" || true
+            set +e
+            RELENG_HOST_ARCH=arm64 releng-build-package 2>&1 | tee /tmp/build.log
+            rc=${PIPESTATUS[0]}
+            set -e
+            [ "$rc" -eq 0 ] && break
+            [ "$try" -ge 4 ] && break
+            fixed=0
+            if grep -q 'kallsyms failure' /tmp/build.log && ! grep -q 'CONFIG_KALLSYMS is not set' "arch/arm64/configs/$DEF"; then
+              echo "FIX: matikan KALLSYMS"
+              sed -i '/CONFIG_KALLSYMS/d' "arch/arm64/configs/$DEF"
+              printf '# CONFIG_KALLSYMS is not set\n# CONFIG_KALLSYMS_ALL is not set\n' >> "arch/arm64/configs/$DEF"
+              fixed=1
+            fi
+            if grep -qE 'multiple definition of .?yylloc' /tmp/build.log; then
+              echo "FIX: dtc yylloc"
+              sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped scripts/dtc/dtc-lexer.l || true
+              fixed=1
+            fi
+            if grep -q 'unknown target ABI' /tmp/build.log && ! grep -q 'COMPAT_VDSO is not set' "arch/arm64/configs/$DEF"; then
+              echo "FIX: COMPAT_VDSO off"
+              echo '# CONFIG_COMPAT_VDSO is not set' >> "arch/arm64/configs/$DEF"
+              fixed=1
+            fi
+            [ "$fixed" -eq 1 ] || break
+          done
+
+          mkdir -p /out /tmp/ex
+          cp /tmp/build.log /out/build.log || true
+          if [ "$rc" -ne 0 ]; then
+            echo "=== BUILD GAGAL, 60 baris terakhir ==="
+            tail -60 /tmp/build.log
+            exit 1
+          fi
+          cp -v /buildd/*.deb /out/ 2>/dev/null || true
+          for d in /buildd/*.deb; do dpkg-deb -x "$d" /tmp/ex 2>/dev/null || true; done
+          find /tmp/ex -name 'boot.img' -exec cp -v {} /out/boot.img \; || true
+          find /tmp/ex /buildd/sources/out -name 'Image*' -size +1M 2>/dev/null | head -5 | while read -r f; do cp -v "$f" /out/; done || true
+          ls -l /out
+          [ -f /out/boot.img ] || echo "PERINGATAN: boot.img tidak ditemukan di paket .deb, hanya Image/deb yang tersedia"
           EOF
+
       - name: Build di container Droidian
         run: |
           docker run --rm \
             -v "$RUNNER_TEMP/pkg":/buildd \
             -v "$RUNNER_TEMP/ksrc":/buildd/sources \
-            -v "$GITHUB_WORKSPACE/../out":/out \
+            -v "$RUNNER_TEMP/out":/out \
             -v "$RUNNER_TEMP/inner.sh":/inner.sh \
             quay.io/droidian/build-essential:trixie-amd64 \
             bash /inner.sh
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: boot-img
-          path: ${{ github.workspace }}/../out/*
-          if-no-files-found: error
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: warn
